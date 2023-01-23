@@ -1,5 +1,6 @@
 package com.example.grocery.business.concretes;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,7 +13,7 @@ import com.example.grocery.business.constants.Messages.ErrorMessages;
 import com.example.grocery.business.constants.Messages.GetByIdMessages;
 import com.example.grocery.business.constants.Messages.GetListMessages;
 import com.example.grocery.business.constants.Messages.UpdateMessages;
-import com.example.grocery.core.security.user.UserService;
+import com.example.grocery.core.security.services.UserService;
 import com.example.grocery.core.utilities.business.BusinessRules;
 import com.example.grocery.core.utilities.exceptions.BusinessException;
 import com.example.grocery.core.utilities.mapper.MapperService;
@@ -44,15 +45,13 @@ public class IndividualCustomerManager implements IndividualCustomerService {
         @Override
         public Result add(CreateIndividualCustomerRequest createIndividualCustomerRequest) {
 
-                Result rules = BusinessRules.run(isExistEmail(createIndividualCustomerRequest.getEmail()),
-                                isExistNationalId(createIndividualCustomerRequest.getNationalIdentity()),
-                                isValidPassword(createIndividualCustomerRequest.getPassword(),
-                                                createIndividualCustomerRequest.getFirstName(),
-                                                createIndividualCustomerRequest.getLastName()));
+                Result rules = BusinessRules.run(
+                                isExistNationalId(createIndividualCustomerRequest.getNationalIdentity()));
 
                 IndividualCustomer individualCustomer = mapperService.getModelMapper().map(
                                 createIndividualCustomerRequest,
                                 IndividualCustomer.class);
+                individualCustomer.setUser(userService.getUserById(createIndividualCustomerRequest.getUserId()));
                 individualCustomerRepository.save(individualCustomer);
                 log.info("added individual customer: {} {} logged to file!",
                                 createIndividualCustomerRequest.getFirstName(),
@@ -78,13 +77,10 @@ public class IndividualCustomerManager implements IndividualCustomerService {
         }
 
         @Override
-        public Result update(UpdateIndividualCustomerRequest updateIndividualCustomerRequest, int id) {
+        public Result update(UpdateIndividualCustomerRequest updateIndividualCustomerRequest, Long id) {
 
-                Result rules = BusinessRules.run(isExistEmail(updateIndividualCustomerRequest.getEmail()),
-                                isExistNationalId(updateIndividualCustomerRequest.getNationalIdentity()),
-                                isValidPassword(updateIndividualCustomerRequest.getPassword(),
-                                                updateIndividualCustomerRequest.getFirstName(),
-                                                updateIndividualCustomerRequest.getLastName()));
+                Result rules = BusinessRules.run(
+                                isExistNationalId(updateIndividualCustomerRequest.getNationalIdentity()));
 
                 IndividualCustomer inDbIndividualCustomer = individualCustomerRepository.findById(id)
                                 .orElseThrow(() -> new BusinessException(ErrorMessages.ID_NOT_FOUND));
@@ -93,6 +89,7 @@ public class IndividualCustomerManager implements IndividualCustomerService {
                                 updateIndividualCustomerRequest,
                                 IndividualCustomer.class);
                 individualCustomer.setId(inDbIndividualCustomer.getId());
+                individualCustomer.setUser(userService.getUserById(updateIndividualCustomerRequest.getUserId()));
                 individualCustomerRepository.save(individualCustomer);
                 log.info("modified individual customer: {} {} logged to file!",
                                 updateIndividualCustomerRequest.getFirstName(),
@@ -103,35 +100,32 @@ public class IndividualCustomerManager implements IndividualCustomerService {
         @Override
         public DataResult<List<GetAllIndividualCustomerResponse>> getAll() {
                 List<IndividualCustomer> individualCustomers = individualCustomerRepository.findAll();
-                List<GetAllIndividualCustomerResponse> returnList = individualCustomers.stream()
-                                .map(ic -> mapperService.getModelMapper().map(ic,
-                                                GetAllIndividualCustomerResponse.class))
-                                .toList();
-                return new SuccessDataResult<List<GetAllIndividualCustomerResponse>>(returnList,
+                List<GetAllIndividualCustomerResponse> returnList = new ArrayList<>();
+                for (var forEachCustomer : individualCustomers) {
+                        GetAllIndividualCustomerResponse obj = mapperService.getModelMapper().map(forEachCustomer,
+                                        GetAllIndividualCustomerResponse.class);
+                        obj.setUserId(forEachCustomer.getUser().getId());
+                        returnList.add(obj);
+                }
+                return new SuccessDataResult<>(returnList,
                                 GetListMessages.INDIVIDUAL_CUSTOMERS_LISTED);
         }
 
         @Override
-        public DataResult<GetByIdIndividualCustomerResponse> getById(int id) {
+        public DataResult<GetByIdIndividualCustomerResponse> getById(Long id) {
                 IndividualCustomer inDbIndividualCustomer = individualCustomerRepository.findById(id)
                                 .orElseThrow(() -> new BusinessException(ErrorMessages.ID_NOT_FOUND));
                 GetByIdIndividualCustomerResponse returnObj = mapperService.getModelMapper().map(
                                 inDbIndividualCustomer,
                                 GetByIdIndividualCustomerResponse.class);
-                return new SuccessDataResult<GetByIdIndividualCustomerResponse>(returnObj,
+                returnObj.setUserId(inDbIndividualCustomer.getUser().getId());
+                return new SuccessDataResult<>(returnObj,
                                 GetByIdMessages.INDIVIDUAL_CUSTOMER_LISTED);
         }
 
-        private Result isExistId(int id) {
+        private Result isExistId(Long id) {
                 if (!userService.existById(id)) {
                         throw new BusinessException(ErrorMessages.ID_NOT_FOUND);
-                }
-                return new SuccessResult();
-        }
-
-        private Result isExistEmail(String email) {
-                if (userService.existByEmail(email)) {
-                        throw new BusinessException(ErrorMessages.EMAIL_REPEATED);
                 }
                 return new SuccessResult();
         }
@@ -139,14 +133,6 @@ public class IndividualCustomerManager implements IndividualCustomerService {
         private Result isExistNationalId(String nationalId) {
                 if (individualCustomerRepository.existsByNationalIdentity(nationalId)) {
                         throw new BusinessException(ErrorMessages.NATIONAL_IDENTITY_REPEATED);
-                }
-                return new SuccessResult();
-        }
-
-        private Result isValidPassword(String password, String firstName, String lastName) {
-                if (password.contains(firstName)
-                                || password.contains(lastName)) {
-                        throw new BusinessException(ErrorMessages.INDIVIDUAL_CUSTOMER_PASSWORD_NOT_VALID);
                 }
                 return new SuccessResult();
         }

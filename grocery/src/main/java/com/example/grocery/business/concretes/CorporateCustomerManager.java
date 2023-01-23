@@ -1,5 +1,6 @@
 package com.example.grocery.business.concretes;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,7 +13,7 @@ import com.example.grocery.business.constants.Messages.ErrorMessages;
 import com.example.grocery.business.constants.Messages.GetByIdMessages;
 import com.example.grocery.business.constants.Messages.GetListMessages;
 import com.example.grocery.business.constants.Messages.UpdateMessages;
-import com.example.grocery.core.security.user.UserService;
+import com.example.grocery.core.security.services.UserService;
 import com.example.grocery.core.utilities.business.BusinessRules;
 import com.example.grocery.core.utilities.exceptions.BusinessException;
 import com.example.grocery.core.utilities.mapper.MapperService;
@@ -44,12 +45,12 @@ public class CorporateCustomerManager implements CorporateCustomerService {
         @Override
         public Result add(CreateCorporateCustomerRequest createCorporateCustomerRequest) {
 
-                Result rules = BusinessRules.run(isExistEmail(createCorporateCustomerRequest.getEmail()),
-                                isExistTaxNumber(createCorporateCustomerRequest.getTaxNumber()));
+                Result rules = BusinessRules.run(isExistTaxNumber(createCorporateCustomerRequest.getTaxNumber()));
 
                 CorporateCustomer corporateCustomer = mapperService.getModelMapper().map(
                                 createCorporateCustomerRequest,
                                 CorporateCustomer.class);
+                corporateCustomer.setUser(userService.getUserById(createCorporateCustomerRequest.getUserId()));
                 corporateCustomerRepository.save(corporateCustomer);
                 log.info("added corporate customer: {} logged to file!",
                                 createCorporateCustomerRequest.getCompanyName());
@@ -73,10 +74,9 @@ public class CorporateCustomerManager implements CorporateCustomerService {
         }
 
         @Override
-        public Result update(UpdateCorporateCustomerRequest updateCorporateCustomerRequest, int id) {
+        public Result update(UpdateCorporateCustomerRequest updateCorporateCustomerRequest, Long id) {
 
-                Result rules = BusinessRules.run(isExistEmail(updateCorporateCustomerRequest.getEmail()),
-                                isExistTaxNumber(updateCorporateCustomerRequest.getTaxNumber()));
+                Result rules = BusinessRules.run(isExistTaxNumber(updateCorporateCustomerRequest.getTaxNumber()));
 
                 CorporateCustomer inDbCorporateCustomer = corporateCustomerRepository.findById(id)
                                 .orElseThrow(() -> new BusinessException(ErrorMessages.ID_NOT_FOUND));
@@ -84,6 +84,7 @@ public class CorporateCustomerManager implements CorporateCustomerService {
                 CorporateCustomer corporateCustomer = mapperService.getModelMapper()
                                 .map(updateCorporateCustomerRequest, CorporateCustomer.class);
                 corporateCustomer.setId(inDbCorporateCustomer.getId());
+                corporateCustomer.setUser(userService.getUserById(updateCorporateCustomerRequest.getUserId()));
                 log.info("modified corporate customer: {} logged to file!",
                                 updateCorporateCustomerRequest.getCompanyName());
                 corporateCustomerRepository.save(corporateCustomer);
@@ -93,29 +94,26 @@ public class CorporateCustomerManager implements CorporateCustomerService {
         @Override
         public DataResult<List<GetAllCorporateCustomerResponse>> getAll() {
                 List<CorporateCustomer> corporateCustomers = corporateCustomerRepository.findAll();
-                List<GetAllCorporateCustomerResponse> returnList = corporateCustomers.stream()
-                                .map(cc -> mapperService.getModelMapper().map(cc,
-                                                GetAllCorporateCustomerResponse.class))
-                                .toList();
-                return new SuccessDataResult<List<GetAllCorporateCustomerResponse>>(returnList,
+                List<GetAllCorporateCustomerResponse> returnList = new ArrayList<>();
+                for (CorporateCustomer forEachCustomer : corporateCustomers) {
+                        GetAllCorporateCustomerResponse obj = mapperService.getModelMapper().map(forEachCustomer,
+                                        GetAllCorporateCustomerResponse.class);
+                        obj.setUserId(forEachCustomer.getUser().getId());
+                        returnList.add(obj);
+                }
+                return new SuccessDataResult<>(returnList,
                                 GetListMessages.CORPORATE_CUSTOMERS_LISTED);
         }
 
         @Override
-        public DataResult<GetByIdCorporateCustomerResponse> getById(int id) {
+        public DataResult<GetByIdCorporateCustomerResponse> getById(Long id) {
                 CorporateCustomer inDbCorporateCustomer = corporateCustomerRepository.findById(id)
                                 .orElseThrow(() -> new BusinessException(ErrorMessages.ID_NOT_FOUND));
                 GetByIdCorporateCustomerResponse returnObj = mapperService.getModelMapper()
                                 .map(inDbCorporateCustomer, GetByIdCorporateCustomerResponse.class);
-                return new SuccessDataResult<GetByIdCorporateCustomerResponse>(returnObj,
+                returnObj.setUserId(inDbCorporateCustomer.getUser().getId());
+                return new SuccessDataResult<>(returnObj,
                                 GetByIdMessages.CORPORATE_CUSTOMER_LISTED);
-        }
-
-        private Result isExistEmail(String email) {
-                if (userService.existByEmail(email)) {
-                        throw new BusinessException(ErrorMessages.EMAIL_REPEATED);
-                }
-                return new SuccessResult();
         }
 
         private Result isExistTaxNumber(String taxNumber) {
@@ -125,7 +123,7 @@ public class CorporateCustomerManager implements CorporateCustomerService {
                 return new SuccessResult();
         }
 
-        private Result isExistId(int id) {
+        private Result isExistId(Long id) {
                 if (!userService.existById(id)) {
                         throw new BusinessException(ErrorMessages.ID_NOT_FOUND);
                 }
